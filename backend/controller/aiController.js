@@ -2,6 +2,8 @@ import OpenAI from "openai"
 import { clerkClient  } from "@clerk/express";
 import sql from "../config/db.js";
 import { v2 as cloudinary } from 'cloudinary';
+import fs from 'fs';
+import pdf from 'pdf-parse/lib/pdf-parse.js';
 
 import axios from "axios";
 
@@ -137,4 +139,106 @@ export const generateImage = async (req, res) => {
         console.error(error.message);
         res.json({ success : false, message: error.message });
     }
-} 
+}
+
+// Remove BG
+export const removeImageBG = async (req, res) => {
+    try {
+        const {userId} = req.auth();
+        const { image } = req.file;
+        const plan = req.plan;
+
+        if(plan !== 'premium') {
+            return res.json({ success: false, message: 'Please upgrade to premium plan for this feature.' });
+        }
+
+        const {secure_url} = await cloudinary.uploader.upload(image.path, {
+            transformation: [{
+                effect: "background_removal",
+                background_removal: "remove_the_background"
+            }]
+        });
+
+        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, "Remove background from image", ${secure_url}, 'image')`;
+
+        res.json({ success: true, data: secure_url });
+    }
+    catch (error) {
+        console.error(error.message);
+        res.json({ success : false, message: error.message });
+    }
+}
+
+// Remove Object
+export const removeImageObject = async (req, res) => {
+    try {
+        const {userId} = req.auth();
+        const { object } = req.body;
+        const { image } = req.file;
+        const plan = req.plan;
+
+        if(plan !== 'premium') {
+            return res.json({ success: false, message: 'Please upgrade to premium plan for this feature.' });
+        }
+
+        const {public_id} = await cloudinary.uploader.upload(image.path);
+
+        const image_url = cloudinary.url(public_id, {
+            transformation: [{
+                effect: `gen_remove:${object}`,
+            }],
+            resource_type: 'image'
+        })
+
+        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${`Removed ${object} from image`}, ${image_url}, 'image')`;
+
+        res.json({ success: true, data: image_url });
+    }
+    catch (error) {
+        console.error(error.message);
+        res.json({ success : false, message: error.message });
+    }
+}
+
+// Review Resume
+export const reviewResume = async (req, res) => {
+    try {
+        const {userId} = req.auth();
+        const resume = req.file;
+        const plan = req.plan;
+
+        if(plan !== 'premium') {
+            return res.json({ success: false, message: 'Please upgrade to premium plan for this feature.' });
+        }
+
+        if(resume.size > 5 * 1024 * 1024) {
+            return res.json({ success: false, message: 'File size exceeds the limit of 5MB.' });
+        }
+
+        const dataBuffer = fs.readFileSync(resume.path);
+        const pdfData = await pdf(dataBuffer);
+
+        const prompt = `Review the following resume and provide constructive feedback on its strengths, weaknesses, and areas for improvement. Resume Content:\n\n${pdfData.text}`;
+
+        const response = await AI.chat.completions.create({
+            model:"gemini-2.5-flash",
+            messages:[{
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature : 0.7,
+            max_tokens : 1000,
+        })
+
+        const content = response.choices[0].message.content;
+
+        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${`Review the uploaded resume`}, ${content}, 'resume-review')`;
+
+        res.json({ success: true, data: content });
+    }
+    catch (error) {
+        console.error(error.message);
+        res.json({ success : false, message: error.message });
+    }
+}

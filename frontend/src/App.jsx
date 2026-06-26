@@ -15,10 +15,10 @@ import { useAuth } from '@clerk/react'
 
 const App = () => {
 
-  const {getToken} = useAuth()
-  useEffect(() => {
-    getToken().then((token) => console.log(token));
-  }, []);
+  // const {getToken} = useAuth()
+  // useEffect(() => {
+  //   getToken().then((token) => console.log(token));
+  // }, []);
 
   return (
     <div>
