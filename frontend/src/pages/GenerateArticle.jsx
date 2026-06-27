@@ -3,6 +3,12 @@ import React, { useState } from 'react'
 import { TbSparkles } from "react-icons/tb";
 import { FaEdit } from "react-icons/fa";
 
+import axios from 'axios';
+import { useAuth } from '@clerk/react'
+import toast from 'react-hot-toast';
+
+axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
+
 const GenerateArticle = () => {
 
   const articleLength = [
@@ -14,8 +20,34 @@ const GenerateArticle = () => {
   const [selectedLength, setSelectedLength] = useState(articleLength[0])
   const [input, setInput] = useState('')
 
+  const [loading, setLoading] = useState(false)
+  const [article, setArticle] = useState('')
+
+  const { getToken } = useAuth();
+
   const onSubmitHandler = async (e) => {
     e.preventDefault();
+    try {
+      setLoading(true);
+      const prompt = `Write an article about ${input} in ${selectedLength.text} words.`;
+  
+      const { response } = await axios.post('/api/ai/generate-article', { prompt, length: selectedLength.length }, {
+        headers: {
+          Authorization: `Bearer ${await getToken()}`
+        }
+      });
+
+      if(response.success) {
+        setArticle(response.content);
+      }
+      else {
+        toast.error(response.message);
+      }
+    }
+    catch (error) {
+      toast.error(error.message);
+    }
+    setLoading(false);
   }
 
   return (
