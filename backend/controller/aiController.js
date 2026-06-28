@@ -3,7 +3,11 @@ import { clerkClient  } from "@clerk/express";
 import sql from "../config/db.js";
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
-import pdf from 'pdf-parse/lib/pdf-parse.js';
+// import pdf from "pdf-parse";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const pdf = require("pdf-parse");
 
 import axios from "axios";
 
