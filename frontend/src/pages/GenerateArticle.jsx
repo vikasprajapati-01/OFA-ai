@@ -6,6 +6,7 @@ import { FaEdit } from "react-icons/fa";
 import axios from 'axios';
 import { useAuth } from '@clerk/react'
 import toast from 'react-hot-toast';
+import Markdown from 'react-markdown';
 
 axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
 
@@ -99,7 +100,11 @@ const GenerateArticle = () => {
           </div>
         ) : (
           <div className="mt-3 h-full overflow-y-scroll text-sm text-slate-600">
-            <div>{article}</div>
+            <div className="reset-tw" >
+              <Markdown>
+                {article}
+              </Markdown>
+            </div>
           </div>
         )}
       </div>
