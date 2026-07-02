@@ -2,7 +2,6 @@ import React, { useState } from 'react'
 
 import { TbSparkles } from "react-icons/tb";
 import { FaEdit } from "react-icons/fa";
-
 import axios from 'axios';
 import { useAuth } from '@clerk/react'
 import toast from 'react-hot-toast';
@@ -32,17 +31,18 @@ const GenerateArticle = () => {
       setLoading(true);
       const prompt = `Write an article about ${input} in ${selectedLength.text} words.`;
   
-      const { response } = await axios.post('/api/ai/generate-article', { prompt, length: selectedLength.length }, {
+      const { data } = await axios.post('/api/ai/generate-article', 
+        { prompt, length: selectedLength.length }, {
         headers: {
           Authorization: `Bearer ${await getToken()}`
         }
       });
 
-      if(response.success) {
-        setArticle(response.content);
+      if(data.success) {
+        setArticle(data.data);
       }
       else {
-        toast.error(response.message);
+        toast.error(data.message);
       }
     }
     catch (error) {
