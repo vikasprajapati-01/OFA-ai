@@ -2,13 +2,46 @@ import React, {useState} from 'react'
 
 import { TbSparkles } from "react-icons/tb";
 import { FaEraser } from "react-icons/fa";
+import toast from 'react-hot-toast';
+import axios from 'axios';
+import { useAuth } from '@clerk/react'
+
+axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
 
 const RemoveBG = () => {
  
   const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [content, setContent] = useState('')
+
+  const { getToken } = useAuth();
 
   const onSubmitHandler = async (e) => {
     e.preventDefault();
+    try {
+      setLoading(true);
+      
+      const formData = new FormData();
+      formData.append('image', input);
+  
+      const { data } = await axios.post('/api/ai/remove-image-bg', 
+        formData , {
+        headers: {
+          Authorization: `Bearer ${await getToken()}`
+        }
+      });
+
+      if(data.success) {
+        setContent(data.data);
+      }
+      else {
+        toast.error(data.message);
+      }
+    }
+    catch (error) {
+      toast.error(error.message);
+    }
+    setLoading(false);
   }
 
   return (
@@ -25,8 +58,13 @@ const RemoveBG = () => {
 
               <p className="text-xs text-gray-500 font-light mt-1">Supports JPG, PNG, WebP and other common image formats.</p>
     
-              <button type='submit' className='w-full flex justify-center items-center gap-2 bg-gradient-to-r from-[#F6AB41] to-[#FF4938] text-white px-4 py-2 mt-6 rounded-lg text-sm cursor-pointer'>
-                <FaEraser className='w-5'/>
+              <button disabled={loading} type='submit' className='w-full flex justify-center items-center gap-2 bg-gradient-to-r from-[#F6AB41] to-[#FF4938] text-white px-4 py-2 mt-6 rounded-lg text-sm cursor-pointer'>
+                {
+                  loading ? 
+                  <span className="w-4 h-4 my-1 rounded-full border-2 border-t-transparent animate-spin"></span> 
+                  :
+                  <FaEraser className='w-5'/>
+                }
                 Remove Background
               </button>
           </form>
@@ -37,13 +75,20 @@ const RemoveBG = () => {
               <FaEraser className='w-5 h-5 text-[#FF4938]' />
               <h1 className='text-xl font-semibold'>Edited Image</h1>
             </div>
-    
-            <div className="flex-1 flex justify-center items-center">
-              <div className="text-sm flex flex-col items-center gap-5 text-gray-400">
-                <FaEraser className='w-9 h-9' />
-                <p>Upload an image and click "Remove Background" to edit it.</p>
-              </div>
-            </div>
+
+            {
+              !content ?
+              (
+                <div className="flex-1 flex justify-center items-center">
+                  <div className="text-sm flex flex-col items-center gap-5 text-gray-400">
+                    <FaEraser className='w-9 h-9' />
+                    <p>Upload an image and click "Remove Background" to edit it.</p>
+                  </div>
+                </div>
+              ) : (
+                <img src={content} alt="Edited" className="mt-3 w-full h-full" />
+              )
+            }    
           </div>
         </div>
   )

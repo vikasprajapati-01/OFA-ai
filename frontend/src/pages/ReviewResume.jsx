@@ -2,13 +2,47 @@ import React, {useState} from 'react'
 
 import { TbSparkles } from "react-icons/tb";
 import { FiFileText } from "react-icons/fi";
+import Markdown from 'react-markdown';
+import toast from 'react-hot-toast';
+import axios from 'axios';
+import { useAuth } from '@clerk/react'
+
+axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
 
 const ReviewResume = () => {
  
   const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [content, setContent] = useState('')
+
+  const { getToken } = useAuth();
 
   const onSubmitHandler = async (e) => {
     e.preventDefault();
+    try {
+      setLoading(true);
+      
+      const formData = new FormData();
+      formData.append('resume', input);
+  
+      const { data } = await axios.post('/api/ai/review-resume', 
+        formData , {
+        headers: {
+          Authorization: `Bearer ${await getToken()}`
+        }
+      });
+
+      if(data.success) {
+        setContent(data.data);
+      }
+      else {
+        toast.error(data.message);
+      }
+    }
+    catch (error) {
+      toast.error(error.message);
+    }
+    setLoading(false);
   }
 
   return (
@@ -26,7 +60,12 @@ const ReviewResume = () => {
               <p className="text-xs text-gray-500 font-light mt-1">Supports PDF document formats only.</p>
     
               <button type='submit' className='w-full flex justify-center items-center gap-2 bg-gradient-to-r from-[#00DA83] to-[#009BB3] text-white px-4 py-2 mt-6 rounded-lg text-sm cursor-pointer'>
-                <FiFileText className='w-5'/>
+                {
+                  loading ? 
+                  <span className="w-4 h-4 my-1 rounded-full border-2 border-t-transparent animate-spin"></span> 
+                  :
+                  <FiFileText className='w-5'/>
+                }
                 Review Resume
               </button>
           </form>
@@ -37,13 +76,26 @@ const ReviewResume = () => {
               <FiFileText className='w-5 h-5 text-[#00DA83]' />
               <h1 className='text-xl font-semibold'>Analyzed Resume</h1>
             </div>
-    
-            <div className="flex-1 flex justify-center items-center">
-              <div className="text-sm flex flex-col items-center gap-5 text-gray-400">
-                <FiFileText className='w-9 h-9' />
-                <p>Upload a resume and click "Review Resume" to analyze it.</p>
-              </div>
-            </div>
+            
+            {
+              !content ?
+              (
+                <div className="flex-1 flex justify-center items-center">
+                  <div className="text-sm flex flex-col items-center gap-5 text-gray-400">
+                    <FiFileText className='w-9 h-9' />
+                    <p>Upload a resume and click "Review Resume" to analyze it.</p>
+                  </div>
+                </div>
+                ) : (
+                <div className="mt-3 h-full overflow-y-scroll text-sm text-slate-600">
+                  <div className="reset-tw" >
+                    <Markdown>
+                      {content}
+                    </Markdown>
+                  </div>
+                </div>
+              )
+            }
           </div>
         </div>
   )

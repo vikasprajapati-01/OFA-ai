@@ -36,8 +36,9 @@ export const generateArticle = async (req, res) => {
                 },
             ],
             temperature : 0.7,
-            max_tokens : length
+            max_output_tokens : length
         })
+        // console.log(response.choices);
 
         const generatedContent = response.choices[0].message.content;
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${generatedContent}, 'article')`;
@@ -79,7 +80,7 @@ export const generateBlogTitle = async (req, res) => {
                 },
             ],
             temperature : 0.7,
-            max_tokens : 100,
+            max_output_tokens : 100,
         })
 
         const content = response.choices[0].message.content;
@@ -149,7 +150,7 @@ export const generateImage = async (req, res) => {
 export const removeImageBG = async (req, res) => {
     try {
         const {userId} = req.auth();
-        const { image } = req.file;
+        const image = req.file;
         const plan = req.plan;
 
         if(plan !== 'premium') {
@@ -178,7 +179,7 @@ export const removeImageObject = async (req, res) => {
     try {
         const {userId} = req.auth();
         const { object } = req.body;
-        const { image } = req.file;
+        const image = req.file;
         const plan = req.plan;
 
         if(plan !== 'premium') {
