@@ -11,7 +11,6 @@ import RemoveBG from './pages/RemoveBG'
 import RemoveObject from './pages/RemoveObject'
 import ReviewResume from './pages/ReviewResume'
 
-import { useAuth } from '@clerk/react'
 import { Toaster } from 'react-hot-toast'
 
 const App = () => {

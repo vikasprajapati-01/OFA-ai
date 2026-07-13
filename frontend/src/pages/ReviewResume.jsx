@@ -7,8 +7,6 @@ import toast from 'react-hot-toast';
 import axios from 'axios';
 import { useAuth } from '@clerk/react'
 
-axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
-
 const ReviewResume = () => {
  
   const [input, setInput] = useState('')
@@ -71,7 +69,7 @@ const ReviewResume = () => {
           </form>
     
           {/* Right */}
-          <div className='w-full max-w-lg p-4 bg-white rounded-lg flex flex-col border border-gray-200 min-h-96 max-h-[600px]'>
+          <div className='w-full max-w-lg p-4 bg-white rounded-lg flex flex-col border border-gray-200 min-h-96'>
             <div className="flex items-center gap-3">
               <FiFileText className='w-5 h-5 text-[#00DA83]' />
               <h1 className='text-xl font-semibold'>Analyzed Resume</h1>
@@ -87,7 +85,7 @@ const ReviewResume = () => {
                   </div>
                 </div>
                 ) : (
-                <div className="mt-3 h-full overflow-y-scroll text-sm text-slate-600">
+                <div className="mt-3 text-sm text-slate-600">
                   <div className="reset-tw" >
                     <Markdown>
                       {content}

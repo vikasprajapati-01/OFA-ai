@@ -7,8 +7,6 @@ import Markdown from 'react-markdown';
 import { useAuth } from '@clerk/react'
 import axios from 'axios';
 
-axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
-
 const BlogTitle = () => {
 
   const blogCategories = [ 'General', 'Technology', 'Health', 'Travel', 'Finance', 'Education', 'Food', 'Lifestyle', 'Entertainment', 'Sports' ]
@@ -97,7 +95,7 @@ const BlogTitle = () => {
                   </div>
                 </div>
               ) : (
-                <div className="mt-3 h-full overflow-y-scroll text-sm text-slate-600">
+                <div className="mt-3 text-sm text-slate-600">
                   <div className="reset-tw" >
                     <Markdown>
                       {content}

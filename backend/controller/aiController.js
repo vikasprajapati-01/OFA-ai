@@ -35,8 +35,7 @@ export const generateArticle = async (req, res) => {
                     "content": prompt,
                 },
             ],
-            temperature : 0.7,
-            max_output_tokens : length
+            temperature : 0.7
         })
         // console.log(response.choices);
 
@@ -45,7 +44,7 @@ export const generateArticle = async (req, res) => {
 
         if(plan !== 'premium') {
             await clerkClient.users.updateUserMetadata(userId, {
-                privateMetadata: {
+                publicMetadata: {
                     free_usage: free_usage + 1
                 }
             })
@@ -79,8 +78,7 @@ export const generateBlogTitle = async (req, res) => {
                     "content": prompt,
                 },
             ],
-            temperature : 0.7,
-            max_output_tokens : 100,
+            temperature : 0.7
         })
 
         const content = response.choices[0].message.content;
@@ -88,7 +86,7 @@ export const generateBlogTitle = async (req, res) => {
 
         if(plan !== 'premium') {
             await clerkClient.users.updateUserMetadata(userId, {
-                privateMetadata: {
+                publicMetadata: {
                     free_usage: free_usage + 1
                 }
             })
@@ -132,7 +130,7 @@ export const generateImage = async (req, res) => {
 
         if(plan !== 'premium') {
             await clerkClient.users.updateUserMetadata(userId, {
-                privateMetadata: {
+                publicMetadata: {
                     free_usage: free_usage + 1
                 }
             })
@@ -164,7 +162,9 @@ export const removeImageBG = async (req, res) => {
             }]
         });
 
-        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, "Remove background from image", ${secure_url}, 'image')`;
+        fs.unlink(image.path, (err) => { if (err) console.error('Temp file cleanup error:', err); });
+
+        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${"Remove background from image"}, ${secure_url}, 'image')`;
 
         res.json({ success: true, data: secure_url });
     }
@@ -187,6 +187,8 @@ export const removeImageObject = async (req, res) => {
         }
 
         const {public_id} = await cloudinary.uploader.upload(image.path);
+
+        fs.unlink(image.path, (err) => { if (err) console.error('Temp file cleanup error:', err); });
 
         const image_url = cloudinary.url(public_id, {
             transformation: [{
@@ -223,6 +225,8 @@ export const reviewResume = async (req, res) => {
         const dataBuffer = fs.readFileSync(resume.path);
         const pdfData = await pdf(dataBuffer);
 
+        fs.unlink(resume.path, (err) => { if (err) console.error('Temp file cleanup error:', err); });
+
         const prompt = `Review the following resume and provide constructive feedback on its strengths, weaknesses, and areas for improvement. Resume Content:\n\n${pdfData.text}`;
 
         const response = await AI.chat.completions.create({
@@ -232,13 +236,12 @@ export const reviewResume = async (req, res) => {
                     "content": prompt,
                 },
             ],
-            temperature : 0.7,
-            max_tokens : 1000,
+            temperature : 0.7
         })
 
         const content = response.choices[0].message.content;
 
-        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${`Review the uploaded resume`}, ${content}, 'resume-review')`;
+        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${"Review the uploaded resume"}, ${content}, 'resume-review')`;
 
         res.json({ success: true, data: content });
     }

@@ -20,7 +20,7 @@ const AIComp = () => {
         {
             AiToolsData.map((tool, index) => (
                 <div key={index} onClick={() => user && navigate(tool.path)} className='p-8 m-4 max-w-xs rounded-lg bg-[#FDFDFE] shadow-lg border border-gray-100 hover:-translate-y-1 transition-all duration-300 cursor-pointer'>
-                    <tool.Icon className='w-12 h-12 p-3 rounded-xl' style={{background: 'linear-gradient(to bottom, ${tool.bg.from}, ${tool.bg.to})'}} />
+                    <tool.Icon className='w-12 h-12 p-3 rounded-xl' style={{background: `linear-gradient(to bottom, ${tool.bg.from}, ${tool.bg.to})`}} />
                     <h3 className='mt-6 mb-3 text-lg font-semibold'>{tool.title}</h3>
                     <p className='text-gray-400 text-sm max-w-[95%]'>{tool.description}</p>
                 </div>

@@ -1,13 +1,11 @@
-import React, { use, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 import { IoSparkles } from 'react-icons/io5'
 import { FaGem } from 'react-icons/fa6'
 import ItemCreation from '../components/ItemCreation'
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { useAuth } from '@clerk/react'
-
-axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
+import { useAuth, useUser } from '@clerk/react'
 
 const Dashboard = () => {
 
@@ -15,6 +13,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true)
 
   const { getToken } = useAuth();
+  const { user } = useUser();
+  const isPremium = user && user.publicMetadata?.free_usage === undefined;
 
   const getDashboardData = async () => {
     setLoading(true);
@@ -60,7 +60,7 @@ const Dashboard = () => {
           <div className='text-slate-600'>
             <p className='text-sm'>Active Plan</p>
             <h2 className='text-xl font-semibold'>
-              {/* <Protect plan='premium' fallback='Free'>Premium</Protect> */}N/A
+              {isPremium ? 'Premium' : 'Free'}
             </h2>
           </div>
           <div className='w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF61C5] to-[#9E53EE] text-white flex justify-center items-center'>

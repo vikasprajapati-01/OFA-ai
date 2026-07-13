@@ -6,8 +6,6 @@ import toast from 'react-hot-toast';
 import axios from 'axios';
 import { useAuth } from '@clerk/react'
 
-axios.defaults.baseURL = import.meta.env.VITE_BASE_URL || 'http://localhost:3000'
-
 const GenerateImages = () => {
 
   const imageStyle = [ 'Realistic', 'Cartoon', 'Ghibli', 'Anime', 'Fantasy', '3D', 'Portrait' ]
