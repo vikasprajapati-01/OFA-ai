@@ -1,33 +1,119 @@
 import React from 'react'
-
 import { AiToolsData } from '../assets/data'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '@clerk/react'
+import { TbSparkles } from 'react-icons/tb'
 
 const AIComp = () => {
+  const navigate = useNavigate()
+  const { user } = useUser()
 
-    const navigate = useNavigate()
-    const user = useUser()
-    
   return (
-    <div className='px-4 sm:px-20 xl:px-32 my-24'>
-      <div className='text-center'>
-        <h2 className='text-slate-700 text-[42px] font-semibold'>Provided AI Tools</h2>
-        <p className='text-gray-500 max-w-lg mx-auto'>Everything you need to perform you daily tasks.</p>
+    <section style={{
+      padding: '100px 2rem',
+      background: 'var(--bg-secondary)',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Subtle glow */}
+      <div className="glow-orb" style={{
+        width: '400px', height: '400px',
+        background: 'radial-gradient(circle, #6366f1, transparent)',
+        top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        opacity: 0.1,
+        animationDuration: '10s',
+      }} />
+
+      <div style={{ maxWidth: '1200px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '60px' }}>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'var(--accent-light)',
+            border: '1px solid var(--accent)',
+            borderRadius: '99px',
+            padding: '5px 14px',
+            marginBottom: '20px',
+            fontSize: '0.78rem',
+            color: 'var(--accent)',
+            fontWeight: 500,
+          }}>
+            <TbSparkles style={{ width: '13px' }} /> Our Tools
+          </div>
+          <h2 className="section-title" style={{ marginBottom: '14px' }}>Powerful AI Tools</h2>
+          <p style={{ color: 'var(--text-secondary)', maxWidth: '480px', margin: '0 auto', lineHeight: 1.7 }}>
+            Everything you need to supercharge your daily creative workflow.
+          </p>
+        </div>
+
+        {/* Tool cards grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '20px',
+        }}>
+          {AiToolsData.map((tool, index) => (
+            <div
+              key={index}
+              className="glass-card"
+              onClick={() => user && navigate(tool.path)}
+              style={{
+                padding: '28px',
+                cursor: user ? 'pointer' : 'default',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Icon */}
+              <div style={{
+                width: '52px', height: '52px',
+                borderRadius: '14px',
+                background: `linear-gradient(135deg, ${tool.bg.from}, ${tool.bg.to})`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '20px',
+                boxShadow: `0 4px 16px ${tool.bg.from}40`,
+              }}>
+                <tool.Icon style={{ width: '24px', height: '24px', color: '#fff' }} />
+              </div>
+
+              <h3 style={{
+                fontSize: '1.05rem',
+                fontWeight: 600,
+                color: 'var(--text)',
+                marginBottom: '8px',
+              }}>
+                {tool.title}
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                {tool.description}
+              </p>
+
+              {/* Hover accent line */}
+              <div style={{
+                position: 'absolute',
+                bottom: 0, left: 0, right: 0,
+                height: '2px',
+                background: `linear-gradient(90deg, ${tool.bg.from}, ${tool.bg.to})`,
+                transform: 'scaleX(0)',
+                transformOrigin: 'left',
+                transition: 'transform 0.3s ease',
+              }}
+              className="tool-underline"
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className='flex flex-wrap mt-10 justify-center'>
-        {
-            AiToolsData.map((tool, index) => (
-                <div key={index} onClick={() => user && navigate(tool.path)} className='p-8 m-4 max-w-xs rounded-lg bg-[#FDFDFE] shadow-lg border border-gray-100 hover:-translate-y-1 transition-all duration-300 cursor-pointer'>
-                    <tool.Icon className='w-12 h-12 p-3 rounded-xl' style={{background: `linear-gradient(to bottom, ${tool.bg.from}, ${tool.bg.to})`}} />
-                    <h3 className='mt-6 mb-3 text-lg font-semibold'>{tool.title}</h3>
-                    <p className='text-gray-400 text-sm max-w-[95%]'>{tool.description}</p>
-                </div>
-            ))
-        }
-      </div>
-    </div>
+      <style>{`
+        .glass-card:hover .tool-underline { transform: scaleX(1) !important; }
+      `}</style>
+    </section>
   )
 }
 
