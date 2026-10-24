@@ -1,242 +1,231 @@
 import OpenAI from "openai"
-import { clerkClient  } from "@clerk/express";
-import sql from "../config/db.js";
+import sql, { reserveFreeUsage, refundFreeUsage } from "../config/db.js";
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
-// import pdf from "pdf-parse";
 import { createRequire } from "module";
+import axios from "axios";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
 
-import axios from "axios";
-
 const AI = new OpenAI({
     apiKey: process.env.GEMINI_API_KEY,
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    timeout: 60 * 1000,
+    maxRetries: 1
 })
 
-export const generateArticle = async (req, res) => {
-    try {
-        const {userId} = req.auth();
-        const { prompt, length } = req.body;
-        const plan = req.plan;
-        const free_usage = req.free_usage;
+const MAX_PROMPT_LENGTH = 4000;
 
-        if(plan !== 'premium' && free_usage >= 10) {
-            return res.json({ success: false, message: 'Free usage limit reached. Please upgrade to premium plan.' });
+const isValidPrompt = (prompt) =>
+    typeof prompt === 'string' && prompt.trim().length > 0 && prompt.length <= MAX_PROMPT_LENGTH;
+
+const removeTempFile = (file) => {
+    if (file?.path) {
+        fs.promises.unlink(file.path).catch((err) => console.error('Temp file cleanup error:', err.message));
+    }
+};
+
+const sendError = (res, error) => {
+    console.error(error.message);
+    if (error.status === 429) {
+        return res.status(429).json({ success: false, message: 'The AI service is busy right now. Please try again in a moment.' });
+    }
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+};
+
+// Free users: atomically take a usage slot BEFORE doing the work.
+// Returns null (response already sent) if the limit is reached.
+const takeFreeSlot = async (req, res) => {
+    if (req.plan === 'premium') return { reserved: false };
+
+    const { userId } = req.auth();
+    const reserved = await reserveFreeUsage(userId);
+    if (!reserved) {
+        res.status(403).json({ success: false, message: 'Free usage limit reached. Please upgrade to premium plan.' });
+        return null;
+    }
+    return { reserved: true };
+};
+
+const refundSlot = (userId) =>
+    refundFreeUsage(userId).catch((err) => console.error('Usage refund failed:', err.message));
+
+// Shared by article + blog title
+const generateText = async (req, res, type) => {
+    const { userId } = req.auth();
+    let reserved = false;
+
+    try {
+        const { prompt } = req.body || {};
+
+        if (!isValidPrompt(prompt)) {
+            return res.status(400).json({ success: false, message: `Prompt is required and must be under ${MAX_PROMPT_LENGTH} characters.` });
         }
+
+        const slot = await takeFreeSlot(req, res);
+        if (!slot) return;
+        reserved = slot.reserved;
 
         const response = await AI.chat.completions.create({
-            model:"gemini-2.5-flash",
-            messages:[
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            temperature : 0.7
-        })
-        // console.log(response.choices);
-
-        const generatedContent = response.choices[0].message.content;
-        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${generatedContent}, 'article')`;
-
-        if(plan !== 'premium') {
-            await clerkClient.users.updateUserMetadata(userId, {
-                publicMetadata: {
-                    free_usage: free_usage + 1
-                }
-            })
-        }
-
-        res.json({ success: true, data: generatedContent });
-    }
-    catch (error) {
-        console.error(error.message);
-        res.json({ success : false, message: error.message });
-    }
-}
-
-
-// Blog Title
-export const generateBlogTitle = async (req, res) => {
-    try {
-        const {userId} = req.auth();
-        const { prompt } = req.body;
-        const plan = req.plan;
-        const free_usage = req.free_usage;
-
-        if(plan !== 'premium' && free_usage >= 10) {
-            return res.json({ success: false, message: 'Free usage limit reached. Please upgrade to premium plan.' });
-        }
-
-        const response = await AI.chat.completions.create({
-            model:"gemini-2.5-flash",
-            messages:[{
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            temperature : 0.7
+            model: "gemini-2.5-flash",
+            messages: [{ "role": "user", "content": prompt }],
+            temperature: 0.7
         })
 
         const content = response.choices[0].message.content;
-        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${content}, 'blog-title')`;
-
-        if(plan !== 'premium') {
-            await clerkClient.users.updateUserMetadata(userId, {
-                publicMetadata: {
-                    free_usage: free_usage + 1
-                }
-            })
-        }
+        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${content}, ${type})`;
 
         res.json({ success: true, data: content });
     }
     catch (error) {
-        console.error(error.message);
-        res.json({ success : false, message: error.message });
+        if (reserved) await refundSlot(userId);
+        sendError(res, error);
     }
 }
 
+export const generateArticle = (req, res) => generateText(req, res, 'article');
+
+export const generateBlogTitle = (req, res) => generateText(req, res, 'blog-title');
+
 // Image
 export const generateImage = async (req, res) => {
-    try {
-        const {userId} = req.auth();
-        const { prompt } = req.body;
-        const plan = req.plan;
-        const free_usage = req.free_usage;
+    const { userId } = req.auth();
+    let reserved = false;
 
-        if(plan !== 'premium' && free_usage >= 10) {
-            return res.json({ success: false, message: 'Free usage limit reached. Please upgrade to premium plan.' });
+    try {
+        const { prompt } = req.body || {};
+
+        if (!isValidPrompt(prompt)) {
+            return res.status(400).json({ success: false, message: `Prompt is required and must be under ${MAX_PROMPT_LENGTH} characters.` });
         }
+
+        const slot = await takeFreeSlot(req, res);
+        if (!slot) return;
+        reserved = slot.reserved;
 
         const formData = new FormData()
         formData.append('prompt', prompt)
 
-        const {data} = await axios.post("https://clipdrop-api.co/text-to-image/v1", formData, {
+        const { data } = await axios.post("https://clipdrop-api.co/text-to-image/v1", formData, {
             headers: {
                 'x-api-key': process.env.CLIPDROP_API_KEY,
             },
             responseType: 'arraybuffer',
+            timeout: 60 * 1000,
         })
 
         const base64Image = `data:image/png;base64,${Buffer.from(data, 'binary').toString('base64')}`;
 
-        const {secure_url} = await cloudinary.uploader.upload(base64Image)
+        const { secure_url } = await cloudinary.uploader.upload(base64Image)
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${secure_url}, 'image')`;
-
-        if(plan !== 'premium') {
-            await clerkClient.users.updateUserMetadata(userId, {
-                publicMetadata: {
-                    free_usage: free_usage + 1
-                }
-            })
-        }
 
         res.json({ success: true, data: secure_url });
     }
     catch (error) {
-        console.error(error.message);
-        res.json({ success : false, message: error.message });
+        if (reserved) await refundSlot(userId);
+        sendError(res, error);
     }
 }
 
-// Remove BG
+// Remove BG (premium check is done in the route, before the upload)
 export const removeImageBG = async (req, res) => {
-    try {
-        const {userId} = req.auth();
-        const image = req.file;
-        const plan = req.plan;
+    const image = req.file;
 
-        if(plan !== 'premium') {
-            return res.json({ success: false, message: 'Please upgrade to premium plan for this feature.' });
+    try {
+        const { userId } = req.auth();
+
+        if (!image) {
+            return res.status(400).json({ success: false, message: 'Image is required.' });
         }
 
-        const {secure_url} = await cloudinary.uploader.upload(image.path, {
+        const { secure_url } = await cloudinary.uploader.upload(image.path, {
             transformation: [{
                 effect: "background_removal",
                 background_removal: "remove_the_background"
             }]
         });
 
-        fs.unlink(image.path, (err) => { if (err) console.error('Temp file cleanup error:', err); });
-
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${"Remove background from image"}, ${secure_url}, 'image')`;
 
         res.json({ success: true, data: secure_url });
     }
     catch (error) {
-        console.error(error.message);
-        res.json({ success : false, message: error.message });
+        sendError(res, error);
+    }
+    finally {
+        removeTempFile(image);
     }
 }
 
-// Remove Object
+// Remove Object (premium check is done in the route, before the upload)
 export const removeImageObject = async (req, res) => {
-    try {
-        const {userId} = req.auth();
-        const { object } = req.body;
-        const image = req.file;
-        const plan = req.plan;
+    const image = req.file;
 
-        if(plan !== 'premium') {
-            return res.json({ success: false, message: 'Please upgrade to premium plan for this feature.' });
+    try {
+        const { userId } = req.auth();
+        const { object } = req.body || {};
+
+        if (!image) {
+            return res.status(400).json({ success: false, message: 'Image is required.' });
         }
 
-        const {public_id} = await cloudinary.uploader.upload(image.path);
+        if (typeof object !== 'string' || !object.trim() || object.length > 100) {
+            return res.status(400).json({ success: false, message: 'Please describe the object in a single word.' });
+        }
 
-        fs.unlink(image.path, (err) => { if (err) console.error('Temp file cleanup error:', err); });
+        const { public_id } = await cloudinary.uploader.upload(image.path);
 
         const image_url = cloudinary.url(public_id, {
             transformation: [{
-                effect: `gen_remove:${object}`,
+                effect: `gen_remove:${object.trim()}`,
             }],
             resource_type: 'image'
         })
 
-        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${`Removed ${object} from image`}, ${image_url}, 'image')`;
+        await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${`Removed ${object.trim()} from image`}, ${image_url}, 'image')`;
 
         res.json({ success: true, data: image_url });
     }
     catch (error) {
-        console.error(error.message);
-        res.json({ success : false, message: error.message });
+        sendError(res, error);
+    }
+    finally {
+        removeTempFile(image);
     }
 }
 
-// Review Resume
+// Review Resume (premium check is done in the route, before the upload)
 export const reviewResume = async (req, res) => {
+    const resume = req.file;
+
     try {
-        const {userId} = req.auth();
-        const resume = req.file;
-        const plan = req.plan;
+        const { userId } = req.auth();
 
-        if(plan !== 'premium') {
-            return res.json({ success: false, message: 'Please upgrade to premium plan for this feature.' });
+        if (!resume) {
+            return res.status(400).json({ success: false, message: 'Resume file is required.' });
         }
 
-        if(resume.size > 5 * 1024 * 1024) {
-            return res.json({ success: false, message: 'File size exceeds the limit of 5MB.' });
+        if (resume.mimetype !== 'application/pdf') {
+            return res.status(400).json({ success: false, message: 'Only PDF files are supported.' });
         }
 
-        const dataBuffer = fs.readFileSync(resume.path);
+        if (resume.size > 5 * 1024 * 1024) {
+            return res.status(413).json({ success: false, message: 'File size exceeds the limit of 5MB.' });
+        }
+
+        const dataBuffer = await fs.promises.readFile(resume.path);
         const pdfData = await pdf(dataBuffer);
 
-        fs.unlink(resume.path, (err) => { if (err) console.error('Temp file cleanup error:', err); });
+        const resumeText = pdfData.text.slice(0, 20000);
 
-        const prompt = `Review the following resume and provide constructive feedback on its strengths, weaknesses, and areas for improvement. Resume Content:\n\n${pdfData.text}`;
+        const prompt = `Review the following resume and provide constructive feedback on its strengths, weaknesses, and areas for improvement. Resume Content:\n\n${resumeText}`;
 
         const response = await AI.chat.completions.create({
-            model:"gemini-2.5-flash",
-            messages:[{
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            temperature : 0.7
+            model: "gemini-2.5-flash",
+            messages: [{ "role": "user", "content": prompt }],
+            temperature: 0.7
         })
 
         const content = response.choices[0].message.content;
@@ -246,7 +235,9 @@ export const reviewResume = async (req, res) => {
         res.json({ success: true, data: content });
     }
     catch (error) {
-        console.error(error.message);
-        res.json({ success : false, message: error.message });
+        sendError(res, error);
+    }
+    finally {
+        removeTempFile(resume);
     }
 }

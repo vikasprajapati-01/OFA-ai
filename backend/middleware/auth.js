@@ -1,4 +1,5 @@
 import { clerkClient, getAuth } from '@clerk/express';
+import { getFreeUsage, ensureUsageRow } from '../config/db.js';
 
 export const auth = async (req, res, next) => {
     try {
@@ -9,7 +10,7 @@ export const auth = async (req, res, next) => {
             return res.status(401).json({ success: false, message: 'Unauthorized' });
         }
 
-        // Step 1: Check premium plan from session JWT claims (no API call)
+        // Premium check comes from the session JWT claims (no API call)
         let hasPremiumPlan = false;
         try {
             hasPremiumPlan = authState.has({ plan: 'premium' });
@@ -17,37 +18,45 @@ export const auth = async (req, res, next) => {
             console.error('[Auth] has() error:', planErr.message);
         }
 
-        // Step 2: Get user metadata from Clerk API
-        let user = null;
-        try {
-            user = await clerkClient.users.getUser(userId);
-        } catch (userErr) {
-            console.error('[Auth] getUser() error:', userErr.message);
-        }
-
-        // Step 3: Set free_usage from metadata (or safe default)
-        if (!hasPremiumPlan && user?.publicMetadata?.free_usage !== undefined) {
-            req.free_usage = user.publicMetadata.free_usage;
-        } else {
-            req.free_usage = 0;
-            // Only reset metadata if we successfully got the user and they're not premium
-            if (!hasPremiumPlan && user) {
-                try {
-                    await clerkClient.users.updateUserMetadata(userId, {
-                        publicMetadata: { free_usage: 0 }
-                    });
-                } catch (updateErr) {
-                    console.error('[Auth] updateUserMetadata() error:', updateErr.message);
-                }
-            }
-        }
-
         req.plan = hasPremiumPlan ? 'premium' : 'free';
-        // console.log(`[Auth] userId=${userId} plan=${req.plan} free_usage=${req.free_usage}`);
+
+        if (hasPremiumPlan) {
+            req.free_usage = 0;
+            return next();
+        }
+
+        // Free users: usage lives in our own DB (one fast query, no Clerk API call)
+        let used = await getFreeUsage(userId);
+
+        if (used === null) {
+            // First time we see this user: seed once from the old Clerk metadata
+            // so existing users keep their current count.
+            let seed = 0;
+            try {
+                const user = await clerkClient.users.getUser(userId);
+                const old = user?.publicMetadata?.free_usage;
+                if (typeof old === 'number') seed = old;
+            } catch (userErr) {
+                console.error('[Auth] getUser() error:', userErr.message);
+                return res.status(503).json({ success: false, message: 'Service temporarily unavailable. Please retry.' });
+            }
+            await ensureUsageRow(userId, seed);
+            used = await getFreeUsage(userId);
+        }
+
+        req.free_usage = used ?? 0;
         next();
     }
     catch (error) {
         console.error('[Auth] Fatal error:', error.message);
-        res.json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: 'Authentication failed. Please try again.' });
     }
+}
+
+// Use before upload middleware so non-premium users never write files to disk
+export const requirePremium = (req, res, next) => {
+    if (req.plan !== 'premium') {
+        return res.status(403).json({ success: false, message: 'Please upgrade to premium plan for this feature.' });
+    }
+    next();
 }

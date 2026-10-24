@@ -9,11 +9,12 @@ import { useAuth, useUser } from '@clerk/react'
 
 const Dashboard = () => {
   const [creations, setCreations] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  const { getToken } = useAuth()
+  const { getToken, has } = useAuth()
   const { user } = useUser()
-  const isPremium = user && user.publicMetadata?.free_usage === undefined
+  const isPremium = !!has?.({ plan: 'premium' })
 
   const getDashboardData = async () => {
     setLoading(true)
@@ -21,10 +22,10 @@ const Dashboard = () => {
       const { data } = await axios.get('/api/user/get-user-creations', {
         headers: { Authorization: `Bearer ${await getToken()}` }
       })
-      if (data.success) setCreations(data.creations)
+      if (data.success) { setCreations(data.creations); setTotal(data.total) }
       else toast.error(data.message)
     } catch (error) {
-      toast.error(error.message)
+      toast.error(error.response?.data?.message || error.message)
     }
     setLoading(false)
   }
@@ -52,7 +53,7 @@ const Dashboard = () => {
         }}>
           <div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Total Creations</p>
-            <h2 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text)' }}>{creations.length}</h2>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text)' }}>{total}</h2>
           </div>
           <div style={{
             width: '46px', height: '46px',

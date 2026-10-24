@@ -119,7 +119,7 @@ const Layout = () => {
       height: '100vh',
       background: 'var(--bg)',
     }}>
-      <SignIn afterSignInUrl="/ai" />
+      <SignIn forceRedirectUrl="/ai" />
     </div>
   )
 }

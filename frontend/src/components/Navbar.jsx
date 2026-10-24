@@ -71,7 +71,7 @@ const Navbar = () => {
             ? <UserButton />
             : (
               <button
-                onClick={() => openSignIn({ afterSignInUrl: '/ai' })}
+                onClick={() => openSignIn({ forceRedirectUrl: '/ai' })}
                 className="btn-accent"
                 style={{ borderRadius: '99px', padding: '9px 22px' }}
               >
