@@ -8,6 +8,9 @@ const VUS = Number(__ENV.VUS) || 100;
 const HOLD = __ENV.HOLD || '3m';
 const RAMP = VUS >= 1000 ? '3m' : VUS >= 500 ? '2m' : '1m';
 const MIX = __ENV.MIX || 'all';
+const THINK = Number(__ENV.THINK) || 1;
+const RATE = Number(__ENV.RATE) || 0;            // capacity mode: requests per second at peak
+const HOLD_RATE = __ENV.HOLD_RATE || '90s';
 
 const TINY_PNG = encoding.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
 
@@ -32,6 +35,28 @@ export const options = {
     'http_req_duration{endpoint:upload}': ['p(95)<1800'],
   },
 };
+
+// CAPACITY MODE: -e RATE=1000 sends 1000 requests per second (instead of a fixed number of users).
+// Rough guide: users who each act every ~6 s  =>  RATE x 6 simulated active users.
+if (RATE) {
+  delete options.stages;
+  options.scenarios = {
+    capacity: {
+      executor: 'ramping-arrival-rate',
+      startRate: Math.max(1, Math.round(RATE / 5)),
+      timeUnit: '1s',
+      preAllocatedVUs: Math.min(Math.round(RATE * 0.7), 1500),
+      maxVUs: Number(__ENV.MAXVUS) || 4000,
+      stages: [
+        { duration: '30s', target: RATE },
+        { duration: HOLD_RATE, target: RATE },
+        { duration: '10s', target: 0 },
+      ],
+    },
+  };
+  // stop the run early if the server is clearly failing
+  options.thresholds.http_req_failed = [{ threshold: 'rate<0.05', abortOnFail: true, delayAbortEval: '40s' }];
+}
 
 const headers = (user, plan, json) => {
   const h = {
@@ -87,5 +112,5 @@ export default function () {
     isOk(res, 'upload');
   }
 
-  sleep(3 + Math.random() * 5); // think time: 3 to 8 seconds
+  if (!RATE) sleep((3 + Math.random() * 5) * THINK); // think time: 3 to 8 seconds (in RATE mode the arrival rate controls pacing)
 }

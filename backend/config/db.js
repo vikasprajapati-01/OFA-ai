@@ -1,6 +1,25 @@
 import { neon } from '@neondatabase/serverless';
 
-const sql = neon(`${process.env.DATABASE_URL}`);
+// const sql = neon(`${process.env.DATABASE_URL}`);
+let sql;
+export let poolStats = null;   // test mode only: filled in below when local Postgres is used
+
+if (process.env.LOAD_TEST === 'true' && process.env.LOCAL_DATABASE_URL) {
+    // TEST ONLY: plain local Postgres (no Neon quota, no Neon network latency)
+    const { default: pg } = await import('pg');
+    const pool = new pg.Pool({ connectionString: process.env.LOCAL_DATABASE_URL, max: Number(process.env.PG_POOL_MAX) || 20 });
+    poolStats = () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount });
+
+    // Same tagged-template style as neon(): sql`SELECT ... ${value}`
+    sql = async (strings, ...values) => {
+        const text = strings.reduce((acc, part, i) => acc + part + (i < values.length ? `$${i + 1}` : ''), '');
+        const { rows } = await pool.query(text, values);
+        return rows;
+    };
+    console.warn('WARNING: using LOCAL_DATABASE_URL (test mode), not Neon.');
+} else {
+    sql = neon(`${process.env.DATABASE_URL}`);
+}
 
 export const FREE_LIMIT = 10;
 

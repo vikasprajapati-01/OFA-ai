@@ -1,5 +1,4 @@
-import { clerkClient, getAuth } from '@clerk/express';
-import { getFreeUsage, ensureUsageRow } from '../config/db.js';
+import { getAuth } from '@clerk/express';
 
 const LOAD_TEST = process.env.LOAD_TEST === 'true';
 
@@ -16,22 +15,20 @@ const getFakeUser = (req) => {
 export const auth = async (req, res, next) => {
     try {
         const fake = getFakeUser(req);
-        let userId;
         let hasPremiumPlan = false;
 
         if (fake) {
-            userId = fake.userId;
             hasPremiumPlan = fake.premium;
-            req.auth = () => ({ userId });
+            req.auth = () => ({ userId: fake.userId });
+            req.isTestUser = true;
         } else {
             const authState = getAuth(req);
-            userId = authState.userId;
 
-            if (!userId) {
+            if (!authState.userId) {
                 return res.status(401).json({ success: false, message: 'Unauthorized' });
             }
 
-            // Premium check comes from the session JWT claims (no API call)
+            // Premium check comes from the session JWT claims (no API call, no DB call)
             try {
                 hasPremiumPlan = authState.has({ plan: 'premium' });
             } catch (planErr) {
@@ -40,34 +37,6 @@ export const auth = async (req, res, next) => {
         }
 
         req.plan = hasPremiumPlan ? 'premium' : 'free';
-
-        if (hasPremiumPlan) {
-            req.free_usage = 0;
-            return next();
-        }
-
-        // Free users: usage lives in our own DB (one fast query, no Clerk API call)
-        let used = await getFreeUsage(userId);
-
-        if (used === null) {
-            // First time we see this user: seed once from the old Clerk metadata
-            // so existing users keep their current count. (Fake test users start at 0.)
-            let seed = 0;
-            if (!fake) {
-                try {
-                    const user = await clerkClient.users.getUser(userId);
-                    const old = user?.publicMetadata?.free_usage;
-                    if (typeof old === 'number') seed = old;
-                } catch (userErr) {
-                    console.error('[Auth] getUser() error:', userErr.message);
-                    return res.status(503).json({ success: false, message: 'Service temporarily unavailable. Please retry.' });
-                }
-            }
-            await ensureUsageRow(userId, seed);
-            used = await getFreeUsage(userId);
-        }
-
-        req.free_usage = used ?? 0;
         next();
     }
     catch (error) {

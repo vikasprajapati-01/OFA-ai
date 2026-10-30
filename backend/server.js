@@ -9,6 +9,7 @@ import cloudinaryConfig from './config/cloudinary.js';
 import aiRouter from './routes/aiRoutes.js';
 import userRouter from './routes/userRoutes.js';
 import { monitorEventLoopDelay, createHistogram } from 'perf_hooks';
+import { poolStats } from './config/db.js';
 
 const app = express();
 
@@ -88,7 +89,8 @@ if (process.env.LOAD_TEST === 'true') {
     loop.enable();
     setInterval(() => {
         const m = process.memoryUsage();
-        console.log(`[loop] p99=${(loop.percentile(99) / 1e6).toFixed(0)}ms max=${(loop.max / 1e6).toFixed(0)}ms | heap=${(m.heapUsed / 1048576).toFixed(0)}MB rss=${(m.rss / 1048576).toFixed(0)}MB`);
+        const ps = typeof poolStats === 'function' ? poolStats() : null;
+        console.log(`[loop] p99=${(loop.percentile(99) / 1e6).toFixed(0)}ms max=${(loop.max / 1e6).toFixed(0)}ms | heap=${(m.heapUsed / 1048576).toFixed(0)}MB rss=${(m.rss / 1048576).toFixed(0)}MB${ps ? ` | pool total=${ps.total} idle=${ps.idle} waiting=${ps.waiting}` : ''}`);
         const parts = [...stats].map(([name, h]) => `${name} n=${h.count} p50=${(h.percentile(50) / 1000).toFixed(0)} p95=${(h.percentile(95) / 1000).toFixed(0)} max=${(h.max / 1000).toFixed(0)}`);
         if (parts.length) console.log(`[srv] ms: ${parts.join(' | ')}`);
         stats.forEach((h) => h.reset());

@@ -1,9 +1,10 @@
 import OpenAI from "openai"
-import sql, { reserveFreeUsage, refundFreeUsage } from "../config/db.js";
+import sql, { reserveFreeUsage, refundFreeUsage, getFreeUsage, ensureUsageRow } from "../config/db.js";
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
 import { createRequire } from "module";
 import axios from "axios";
+import { clerkClient } from '@clerk/express';
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
@@ -86,6 +87,17 @@ const sendError = (res, error) => {
     }
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
 };
+// First time we see a free user: create their usage row
+// (copying their old count from Clerk, once, so existing users keep it).
+const createUsageRow = async (req, userId) => {
+    let seed = 0;
+    if (!req.isTestUser) {
+        const user = await clerkClient.users.getUser(userId);
+        const old = user?.publicMetadata?.free_usage;
+        if (typeof old === 'number') seed = old;
+    }
+    await ensureUsageRow(userId, seed);
+};
 
 // Free users: atomically take a usage slot BEFORE doing the work.
 // Returns null (response already sent) if the limit is reached.
@@ -93,7 +105,16 @@ const takeFreeSlot = async (req, res) => {
     if (req.plan === 'premium') return { reserved: false };
 
     const { userId } = req.auth();
-    const reserved = await reserveFreeUsage(userId);
+    let reserved = await reserveFreeUsage(userId);
+
+    if (!reserved) {
+        // Either the limit is reached, or this user has no usage row yet
+        if ((await getFreeUsage(userId)) === null) {
+            await createUsageRow(req, userId);
+            reserved = await reserveFreeUsage(userId);
+        }
+    }
+
     if (!reserved) {
         res.status(403).json({ success: false, message: 'Free usage limit reached. Please upgrade to premium plan.' });
         return null;
