@@ -10,6 +10,7 @@ import aiRouter from './routes/aiRoutes.js';
 import userRouter from './routes/userRoutes.js';
 import { monitorEventLoopDelay, createHistogram } from 'perf_hooks';
 import { poolStats } from './config/db.js';
+import { cacheStats } from './config/cache.js';
 
 const app = express();
 
@@ -94,6 +95,11 @@ if (process.env.LOAD_TEST === 'true') {
         const parts = [...stats].map(([name, h]) => `${name} n=${h.count} p50=${(h.percentile(50) / 1000).toFixed(0)} p95=${(h.percentile(95) / 1000).toFixed(0)} max=${(h.max / 1000).toFixed(0)}`);
         if (parts.length) console.log(`[srv] ms: ${parts.join(' | ')}`);
         stats.forEach((h) => h.reset());
+        
+        if (cacheStats.hit + cacheStats.miss + cacheStats.err > 0) {
+            console.log(`[cache] hit=${cacheStats.hit} miss=${cacheStats.miss} err=${cacheStats.err}`);
+            cacheStats.hit = cacheStats.miss = cacheStats.err = 0;
+        }
         loop.reset();
     }, 10000).unref();
 }

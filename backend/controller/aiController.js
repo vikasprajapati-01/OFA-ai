@@ -5,6 +5,7 @@ import fs from 'fs';
 import { createRequire } from "module";
 import axios from "axios";
 import { clerkClient } from '@clerk/express';
+import { invalidateCreations } from "../config/cache.js";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
@@ -144,6 +145,7 @@ const generateText = async (req, res, type) => {
         const content = await getAiText(prompt);
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${content}, ${type})`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: content });
     }
@@ -178,6 +180,7 @@ export const generateImage = async (req, res) => {
         const { secure_url } = await cloudUpload(base64Image)
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${secure_url}, 'image')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: secure_url });
     }
@@ -206,6 +209,7 @@ export const removeImageBG = async (req, res) => {
         });
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${"Remove background from image"}, ${secure_url}, 'image')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: secure_url });
     }
@@ -243,6 +247,7 @@ export const removeImageObject = async (req, res) => {
         })
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${`Removed ${object.trim()} from image`}, ${image_url}, 'image')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: image_url });
     }
@@ -289,6 +294,7 @@ export const reviewResume = async (req, res) => {
         const content = await getAiText(prompt);
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${"Review the uploaded resume"}, ${content}, 'resume-review')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: content });
     }

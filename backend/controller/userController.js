@@ -1,4 +1,5 @@
 import sql from "../config/db.js";
+import { getCachedList, setCachedList } from "../config/cache.js";
 
 export const getUserCreations = async (req, res) => {
     try {
@@ -7,6 +8,10 @@ export const getUserCreations = async (req, res) => {
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
         const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
+        const field = `${limit}:${offset}`;
+        const cached = await getCachedList(userId, field);
+        if (cached) return res.type('application/json').send(cached);
+
         // Text content is NOT sent in the list (it can be 10KB+ per row).
         // Images are only a short URL, so we keep that.
         const [creations, countRows] = await Promise.all([
@@ -14,7 +19,9 @@ export const getUserCreations = async (req, res) => {
             sql`SELECT COUNT(*)::int AS total FROM creations WHERE user_id = ${userId}`
         ]);
 
-        res.json({ success: true, creations, total: countRows[0].total });
+        const body = JSON.stringify({ success: true, creations, total: countRows[0].total });
+        setCachedList(userId, field, body);
+        res.type('application/json').send(body);
     }
     catch (error) {
         console.error(error.message);
