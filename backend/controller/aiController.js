@@ -1,9 +1,11 @@
 import OpenAI from "openai"
-import sql, { reserveFreeUsage, refundFreeUsage } from "../config/db.js";
+import sql, { reserveFreeUsage, refundFreeUsage, getFreeUsage, ensureUsageRow } from "../config/db.js";
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
 import { createRequire } from "module";
 import axios from "axios";
+import { clerkClient } from '@clerk/express';
+import { invalidateCreations } from "../config/cache.js";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
@@ -16,6 +18,59 @@ const AI = new OpenAI({
 })
 
 const MAX_PROMPT_LENGTH = 4000;
+
+// ---------- TEST MODE (only active when LOAD_TEST=true in the env file) ----------
+const LOAD_TEST = process.env.LOAD_TEST === 'true';
+const FAKE_AI_DELAY_MS = Number(process.env.FAKE_AI_DELAY_MS) || 800;
+const FAKE_IMAGE_DELAY_MS = Number(process.env.FAKE_IMAGE_DELAY_MS) || 2000;
+const FAKE_UPLOAD_DELAY_MS = Number(process.env.FAKE_UPLOAD_DELAY_MS) || 500;
+const FAKE_IMAGE_URL = 'https://res.cloudinary.com/demo/image/upload/sample.jpg';
+const FAKE_TEXT = 'This is a simulated AI response used for load testing. '.repeat(80);
+const FAKE_PNG_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ---------- External calls (real normally, fake in test mode) ----------
+const getAiText = async (prompt) => {
+    if (LOAD_TEST) {
+        await sleep(FAKE_AI_DELAY_MS);
+        return FAKE_TEXT;
+    }
+    const response = await AI.chat.completions.create({
+        model: "gemini-2.5-flash",
+        messages: [{ "role": "user", "content": prompt }],
+        temperature: 0.7
+    })
+    return response.choices[0].message.content;
+};
+
+const getClipdropImage = async (prompt) => {
+    if (LOAD_TEST) {
+        await sleep(FAKE_IMAGE_DELAY_MS);
+        return FAKE_PNG_BASE64;
+    }
+    const formData = new FormData()
+    formData.append('prompt', prompt)
+
+    const { data } = await axios.post("https://clipdrop-api.co/text-to-image/v1", formData, {
+        headers: {
+            'x-api-key': process.env.CLIPDROP_API_KEY,
+        },
+        responseType: 'arraybuffer',
+        timeout: 60 * 1000,
+    })
+
+    return `data:image/png;base64,${Buffer.from(data, 'binary').toString('base64')}`;
+};
+
+const cloudUpload = async (file, options) => {
+    if (LOAD_TEST) {
+        await sleep(FAKE_UPLOAD_DELAY_MS);
+        return { secure_url: FAKE_IMAGE_URL, public_id: 'fake_public_id' };
+    }
+    return cloudinary.uploader.upload(file, options);
+};
+
+// ---------- Helpers ----------
 
 const isValidPrompt = (prompt) =>
     typeof prompt === 'string' && prompt.trim().length > 0 && prompt.length <= MAX_PROMPT_LENGTH;
@@ -33,6 +88,17 @@ const sendError = (res, error) => {
     }
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
 };
+// First time we see a free user: create their usage row
+// (copying their old count from Clerk, once, so existing users keep it).
+const createUsageRow = async (req, userId) => {
+    let seed = 0;
+    if (!req.isTestUser) {
+        const user = await clerkClient.users.getUser(userId);
+        const old = user?.publicMetadata?.free_usage;
+        if (typeof old === 'number') seed = old;
+    }
+    await ensureUsageRow(userId, seed);
+};
 
 // Free users: atomically take a usage slot BEFORE doing the work.
 // Returns null (response already sent) if the limit is reached.
@@ -40,7 +106,16 @@ const takeFreeSlot = async (req, res) => {
     if (req.plan === 'premium') return { reserved: false };
 
     const { userId } = req.auth();
-    const reserved = await reserveFreeUsage(userId);
+    let reserved = await reserveFreeUsage(userId);
+
+    if (!reserved) {
+        // Either the limit is reached, or this user has no usage row yet
+        if ((await getFreeUsage(userId)) === null) {
+            await createUsageRow(req, userId);
+            reserved = await reserveFreeUsage(userId);
+        }
+    }
+
     if (!reserved) {
         res.status(403).json({ success: false, message: 'Free usage limit reached. Please upgrade to premium plan.' });
         return null;
@@ -67,14 +142,10 @@ const generateText = async (req, res, type) => {
         if (!slot) return;
         reserved = slot.reserved;
 
-        const response = await AI.chat.completions.create({
-            model: "gemini-2.5-flash",
-            messages: [{ "role": "user", "content": prompt }],
-            temperature: 0.7
-        })
+        const content = await getAiText(prompt);
 
-        const content = response.choices[0].message.content;
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${content}, ${type})`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: content });
     }
@@ -104,22 +175,12 @@ export const generateImage = async (req, res) => {
         if (!slot) return;
         reserved = slot.reserved;
 
-        const formData = new FormData()
-        formData.append('prompt', prompt)
+        const base64Image = await getClipdropImage(prompt);
 
-        const { data } = await axios.post("https://clipdrop-api.co/text-to-image/v1", formData, {
-            headers: {
-                'x-api-key': process.env.CLIPDROP_API_KEY,
-            },
-            responseType: 'arraybuffer',
-            timeout: 60 * 1000,
-        })
-
-        const base64Image = `data:image/png;base64,${Buffer.from(data, 'binary').toString('base64')}`;
-
-        const { secure_url } = await cloudinary.uploader.upload(base64Image)
+        const { secure_url } = await cloudUpload(base64Image)
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${prompt}, ${secure_url}, 'image')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: secure_url });
     }
@@ -140,7 +201,7 @@ export const removeImageBG = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Image is required.' });
         }
 
-        const { secure_url } = await cloudinary.uploader.upload(image.path, {
+        const { secure_url } = await cloudUpload(image.path, {
             transformation: [{
                 effect: "background_removal",
                 background_removal: "remove_the_background"
@@ -148,6 +209,7 @@ export const removeImageBG = async (req, res) => {
         });
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${"Remove background from image"}, ${secure_url}, 'image')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: secure_url });
     }
@@ -175,7 +237,7 @@ export const removeImageObject = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Please describe the object in a single word.' });
         }
 
-        const { public_id } = await cloudinary.uploader.upload(image.path);
+        const { public_id } = await cloudUpload(image.path);
 
         const image_url = cloudinary.url(public_id, {
             transformation: [{
@@ -185,6 +247,7 @@ export const removeImageObject = async (req, res) => {
         })
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${`Removed ${object.trim()} from image`}, ${image_url}, 'image')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: image_url });
     }
@@ -222,15 +285,16 @@ export const reviewResume = async (req, res) => {
 
         const prompt = `Review the following resume and provide constructive feedback on its strengths, weaknesses, and areas for improvement. Resume Content:\n\n${resumeText}`;
 
-        const response = await AI.chat.completions.create({
-            model: "gemini-2.5-flash",
-            messages: [{ "role": "user", "content": prompt }],
-            temperature: 0.7
-        })
+        // const response = await AI.chat.completions.create({
+        //     model: "gemini-2.5-flash",
+        //     messages: [{ "role": "user", "content": prompt }],
+        //     temperature: 0.7
+        // })
 
-        const content = response.choices[0].message.content;
+        const content = await getAiText(prompt);
 
         await sql`INSERT INTO creations (user_id, prompt, content, type) VALUES (${userId}, ${"Review the uploaded resume"}, ${content}, 'resume-review')`;
+        await invalidateCreations(userId);
 
         res.json({ success: true, data: content });
     }
