@@ -22,6 +22,9 @@ if (process.env.LOAD_TEST === 'true') {
     if (process.env.CLERK_SECRET_KEY?.startsWith('sk_live')) {
         throw new Error('LOAD_TEST must never run with a live Clerk key.');
     }
+    if (process.env.VERCEL) {
+        throw new Error('LOAD_TEST must never run on Vercel.');
+    }
     console.warn('WARNING: LOAD_TEST mode is ON (fake logins and fake AI responses are enabled).');
 }
 
