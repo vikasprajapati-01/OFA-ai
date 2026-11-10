@@ -4,6 +4,7 @@ import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { clerkMiddleware } from '@clerk/express'
+import sql from './config/db.js';
 
 import cloudinaryConfig from './config/cloudinary.js';
 import aiRouter from './routes/aiRoutes.js';
@@ -66,6 +67,21 @@ const apiLimiter = rateLimit({
 app.get('/', (req, res) => res.send('Server Live'));
 
 app.use('/api', apiLimiter);
+
+
+// TEMPORARY: measures one database round trip and the Vercel region (remove after the test)
+app.get('/api/health/db', async (req, res) => {
+    try {
+        let t = Date.now();
+        await sql`SELECT 1`;
+        const firstMs = Date.now() - t;
+        t = Date.now();
+        await sql`SELECT 1`;
+        res.json({ ok: true, region: process.env.VERCEL_REGION || 'unknown', firstMs, dbMs: Date.now() - t });
+    } catch (e) {
+        res.status(500).json({ ok: false });
+    }
+}); 
 app.use('/api/ai', aiRouter);
 app.use('/api/user', userRouter);
 
