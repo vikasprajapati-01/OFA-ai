@@ -12,6 +12,7 @@ import userRouter from './routes/userRoutes.js';
 import { monitorEventLoopDelay, createHistogram } from 'perf_hooks';
 import { poolStats } from './config/db.js';
 import { cacheStats } from './config/cache.js';
+import { metricsMiddleware, metricsHandler } from './config/metrics.js';
 
 const app = express();
 
@@ -34,6 +35,12 @@ app.set('trust proxy', 1);
 await cloudinaryConfig();
 
 app.use(cors());
+
+// Prometheus metrics (only when METRICS=true; used by the local Docker lab)
+if (process.env.METRICS === 'true') {
+    app.use(metricsMiddleware);
+    app.get('/metrics', metricsHandler);
+}
 
 // TEST MODE: measure how long the server itself takes per endpoint
 const stats = new Map();
