@@ -1,0 +1,21 @@
+{
+  "uid": "ofa-lab",
+  "title": "OFA lab",
+  "schemaVersion": 39,
+  "version": 3,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "timeseries", "title": "Server: requests per second by route", "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "sum by (route) (rate(http_request_duration_seconds_count[30s]))", "legendFormat": "{{route}}" } ] },
+    { "id": 2, "type": "timeseries", "title": "Server: p95 latency by route (estimated from buckets)", "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[30s])))", "legendFormat": "{{route}}" } ] },
+    { "id": 7, "type": "timeseries", "title": "k6: requests sent per second and dropped iterations per second", "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "sum(rate(k6_http_reqs_total[20s]))", "legendFormat": "requests/s" }, { "refId": "B", "expr": "sum(rate(k6_dropped_iterations_total[20s])) or vector(0)", "legendFormat": "dropped/s" } ] },
+    { "id": 8, "type": "timeseries", "title": "k6: p95 latency by endpoint (client side)", "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "max by (endpoint) (k6_http_req_duration_p95{endpoint!=\"\"})", "legendFormat": "{{endpoint}}" } ] },
+    { "id": 9, "type": "timeseries", "title": "k6: virtual users", "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "max(k6_vus)", "legendFormat": "active VUs" }, { "refId": "B", "expr": "max(k6_vus_max)", "legendFormat": "allocated VUs" } ] },
+    { "id": 3, "type": "timeseries", "title": "CPU per app container (100% = one core)", "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "rate(process_cpu_seconds_total[30s])", "legendFormat": "{{instance}}" } ] },
+    { "id": 4, "type": "timeseries", "title": "Event-loop lag p99 (floor is about 10 ms)", "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "nodejs_eventloop_lag_p99_seconds", "legendFormat": "{{instance}}" } ] },
+    { "id": 5, "type": "timeseries", "title": "DB pool: total and waiting queries", "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "db_pool_connections{state=\"total\"}", "legendFormat": "total {{instance}}" }, { "refId": "B", "expr": "db_pool_connections{state=\"waiting\"}", "legendFormat": "waiting {{instance}}" } ] },
+    { "id": 6, "type": "timeseries", "title": "Memory (RSS) per app container", "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "process_resident_memory_bytes", "legendFormat": "{{instance}}" } ] }
+  ]
+}
+
+

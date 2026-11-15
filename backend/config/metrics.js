@@ -8,7 +8,7 @@ const httpDuration = new client.Histogram({
     name: 'http_request_duration_seconds',
     help: 'Server-side time to answer a request',
     labelNames: ['method', 'route', 'status_code'],
-    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.6, 0.75, 0.9, 1, 1.5, 2, 2.5, 2.6, 3, 5, 10],
 });
 
 new client.Gauge({

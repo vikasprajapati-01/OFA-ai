@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: ofa
+    folder: OFA
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards
