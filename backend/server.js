@@ -110,6 +110,29 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 server.keepAliveTimeout = 65 * 1000;
 server.headersTimeout = 66 * 1000;
 
+// Graceful shutdown: on SIGTERM/SIGINT stop taking new requests, let running ones finish, then exit.
+// Without this, Node running as PID 1 in Docker ignores SIGTERM and gets force-killed after 10 s.
+let shuttingDown = false;
+function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received: finishing in-flight requests, then exiting`);
+    server.close(() => {
+        console.log('All requests finished, exiting');
+        process.exit(0);
+    });
+    // Nginx keeps idle connections open; close them so server.close() can complete
+    server.closeIdleConnections();
+    setInterval(() => server.closeIdleConnections(), 500).unref();
+    // Safety net: Docker force-kills after 10 s by default
+    setTimeout(() => {
+        console.log('Shutdown timed out, forcing exit');
+        process.exit(1);
+    }, 8000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 // TEST MODE: every 10s print event-loop delay, memory and server-side time per endpoint
 if (process.env.LOAD_TEST === 'true') {
     const loop = monitorEventLoopDelay({ resolution: 10 });
