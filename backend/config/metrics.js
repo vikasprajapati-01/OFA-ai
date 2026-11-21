@@ -24,6 +24,22 @@ new client.Gauge({
     },
 });
 
+// Queue depth (only when the queue is switched on)
+if (process.env.QUEUE_ENABLED === 'true' && process.env.REDIS_URL) {
+    const { getQueue } = await import('./queue.js');
+    new client.Gauge({
+        name: 'queue_jobs',
+        help: 'BullMQ jobs by state',
+        labelNames: ['state'],
+        async collect() {
+            try {
+                const counts = await getQueue().getJobCounts('waiting', 'active', 'delayed', 'failed');
+                for (const [state, n] of Object.entries(counts)) this.set({ state }, n);
+            } catch { /* Redis unreachable: keep the old values */ }
+        },
+    });
+}
+
 export function metricsMiddleware(req, res, next) {
     if (req.path === '/metrics') return next();
     const end = httpDuration.startTimer();

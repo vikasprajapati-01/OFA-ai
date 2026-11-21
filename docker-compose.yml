@@ -15,7 +15,7 @@ services:
     env_file: ./backend/.env.compose
     environment:
       QUEUE_ENABLED: "true"
-      WORKER_CONCURRENCY: "5"
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-5}"
     stop_grace_period: 30s
     restart: unless-stopped
 

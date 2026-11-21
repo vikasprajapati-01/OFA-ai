@@ -1,0 +1,13 @@
+{
+  "uid": "ofa-queue",
+  "title": "OFA queue",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "timeseries", "title": "Queue depth by job state", "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "max by (state) (queue_jobs)", "legendFormat": "{{state}}" } ] },
+    { "id": 2, "type": "timeseries", "title": "Queue routes: requests per second", "gridPos": { "x": 0, "y": 9, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "sum by (route) (rate(http_request_duration_seconds_count{route=~\"/api/queue.*\"}[15s]))", "legendFormat": "{{route}}" } ] },
+    { "id": 3, "type": "timeseries", "title": "Queue routes: server-side p95 (estimated)", "gridPos": { "x": 12, "y": 9, "w": 12, "h": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }, "targets": [ { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket{route=~\"/api/queue.*\"}[30s])))", "legendFormat": "{{route}}" } ] }
+  ]
+}
