@@ -90,6 +90,10 @@ app.get('/api/health/db', async (req, res) => {
     }
 }); 
 app.use('/api/ai', aiRouter);
+if (process.env.QUEUE_ENABLED === 'true' && process.env.REDIS_URL) {
+    const { default: queueRouter } = await import('./routes/queueRoutes.js');
+    app.use('/api/queue', queueRouter);
+}
 app.use('/api/user', userRouter);
 
 // Central error handler (multer errors, bad JSON, anything uncaught)

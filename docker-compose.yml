@@ -4,8 +4,19 @@ services:
     env_file: ./backend/.env.compose
     environment:
       PORT: "3000"
+      QUEUE_ENABLED: "true"
     expose:
       - "3000"
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    command: ["node", "worker.js"]
+    env_file: ./backend/.env.compose
+    environment:
+      QUEUE_ENABLED: "true"
+      WORKER_CONCURRENCY: "5"
+    stop_grace_period: 30s
     restart: unless-stopped
 
   nginx:

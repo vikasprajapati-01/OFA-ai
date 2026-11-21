@@ -10,7 +10,7 @@ import { getAiText } from "../services/aiText.js";
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
 
-const MAX_PROMPT_LENGTH = 4000;
+export const MAX_PROMPT_LENGTH = 4000;
 
 // ---------- TEST MODE (only active when LOAD_TEST=true in the env file) ----------
 const LOAD_TEST = process.env.LOAD_TEST === 'true';
@@ -51,7 +51,7 @@ const cloudUpload = async (file, options) => {
 
 // ---------- Helpers ----------
 
-const isValidPrompt = (prompt) =>
+export const isValidPrompt = (prompt) =>
     typeof prompt === 'string' && prompt.trim().length > 0 && prompt.length <= MAX_PROMPT_LENGTH;
 
 const removeTempFile = (file) => {
@@ -81,7 +81,7 @@ const createUsageRow = async (req, userId) => {
 
 // Free users: atomically take a usage slot BEFORE doing the work.
 // Returns null (response already sent) if the limit is reached.
-const takeFreeSlot = async (req, res) => {
+export const takeFreeSlot = async (req, res) => {
     if (req.plan === 'premium') return { reserved: false };
 
     const { userId } = req.auth();
