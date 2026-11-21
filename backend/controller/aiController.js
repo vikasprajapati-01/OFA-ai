@@ -1,4 +1,3 @@
-import OpenAI from "openai"
 import sql, { reserveFreeUsage, refundFreeUsage, getFreeUsage, ensureUsageRow } from "../config/db.js";
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
@@ -6,42 +5,22 @@ import { createRequire } from "module";
 import axios from "axios";
 import { clerkClient } from '@clerk/express';
 import { invalidateCreations } from "../config/cache.js";
+import { getAiText } from "../services/aiText.js";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
-
-const AI = new OpenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    timeout: 60 * 1000,
-    maxRetries: 1
-})
 
 const MAX_PROMPT_LENGTH = 4000;
 
 // ---------- TEST MODE (only active when LOAD_TEST=true in the env file) ----------
 const LOAD_TEST = process.env.LOAD_TEST === 'true';
-const FAKE_AI_DELAY_MS = Number(process.env.FAKE_AI_DELAY_MS) || 800;
 const FAKE_IMAGE_DELAY_MS = Number(process.env.FAKE_IMAGE_DELAY_MS) || 2000;
 const FAKE_UPLOAD_DELAY_MS = Number(process.env.FAKE_UPLOAD_DELAY_MS) || 500;
 const FAKE_IMAGE_URL = 'https://res.cloudinary.com/demo/image/upload/sample.jpg';
-const FAKE_TEXT = 'This is a simulated AI response used for load testing. '.repeat(80);
 const FAKE_PNG_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ---------- External calls (real normally, fake in test mode) ----------
-const getAiText = async (prompt) => {
-    if (LOAD_TEST) {
-        await sleep(FAKE_AI_DELAY_MS);
-        return FAKE_TEXT;
-    }
-    const response = await AI.chat.completions.create({
-        model: "gemini-2.5-flash",
-        messages: [{ "role": "user", "content": prompt }],
-        temperature: 0.7
-    })
-    return response.choices[0].message.content;
-};
 
 const getClipdropImage = async (prompt) => {
     if (LOAD_TEST) {
