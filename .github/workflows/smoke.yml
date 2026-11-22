@@ -1,0 +1,83 @@
+name: Smoke test
+
+on:
+  push:
+    branches: [master, scaling-lab]
+  pull_request:
+    branches: [master]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: loadtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Create the tables
+        run: |
+          sudo apt-get install -y postgresql-client
+          psql "postgres://postgres:ci@localhost:5432/loadtest" -v ON_ERROR_STOP=1 -f loadtest/schema.sql
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Start the backend in test mode (dummy keys only)
+        working-directory: backend
+        env:
+          PORT: "3000"
+          LOAD_TEST: "true"
+          LOAD_TEST_SECRET: ci-secret
+          CLERK_PUBLISHABLE_KEY: pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
+          CLERK_SECRET_KEY: sk_test_ci_dummy
+          CLOUDINARY_CLOUD_NAME: ci
+          CLOUDINARY_API_KEY: ci
+          CLOUDINARY_API_SECRET: ci
+          GEMINI_API_KEY: ci
+          CLIPDROP_API_KEY: ci
+          LOCAL_DATABASE_URL: postgres://postgres:ci@localhost:5432/loadtest
+          REDIS_URL: redis://localhost:6379
+          PG_POOL_MAX: "15"
+          RATE_LIMIT_PER_MIN: "100000"
+        run: |
+          node server.js > ../server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/ && break; sleep 1; done
+
+      - name: Run the smoke test
+        run: k6 run -e SECRET=ci-secret -e BASE_URL=http://localhost:3000 loadtest/smoke.js
+
+      - name: Show the server log if something failed
+        if: failure()
+        run: cat server.log
