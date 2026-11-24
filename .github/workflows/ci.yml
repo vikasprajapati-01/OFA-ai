@@ -1,4 +1,4 @@
-name: Smoke test
+name: CI
 
 on:
   push:
@@ -6,8 +6,16 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
+    name: Lab smoke test (test mode)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -35,9 +43,9 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -81,3 +89,68 @@ jobs:
       - name: Show the server log if something failed
         if: failure()
         run: cat server.log
+
+  production-mode:
+    name: Production mode (lab hooks must be inert)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Start the backend WITHOUT test mode (like production)
+        working-directory: backend
+        env:
+          PORT: "3000"
+          CLERK_PUBLISHABLE_KEY: pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
+          CLERK_SECRET_KEY: sk_test_ci_dummy
+          CLOUDINARY_CLOUD_NAME: ci
+          CLOUDINARY_API_KEY: ci
+          CLOUDINARY_API_SECRET: ci
+          GEMINI_API_KEY: ci
+          CLIPDROP_API_KEY: ci
+          DATABASE_URL: postgresql://user:pass@localhost.invalid/db
+        run: |
+          node server.js > ../server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/ && break; sleep 1; done
+
+      - name: Prove the lab hooks are inert
+        run: k6 run -e BASE_URL=http://localhost:3000 loadtest/prod-mode.js
+
+      - name: Show the server log if something failed
+        if: failure()
+        run: cat server.log
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
