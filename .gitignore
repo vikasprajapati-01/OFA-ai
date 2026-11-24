@@ -1,3 +1,5 @@
 
 loadtest/*.json
 loadtest/*.log
+
+loadtest/real.pdf

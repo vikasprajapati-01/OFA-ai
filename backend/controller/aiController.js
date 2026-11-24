@@ -258,7 +258,13 @@ export const reviewResume = async (req, res) => {
         }
 
         const dataBuffer = await fs.promises.readFile(resume.path);
-        const pdfData = await pdf(dataBuffer);
+        let pdfData;
+        try {
+            pdfData = await pdf(dataBuffer);
+        } catch (parseError) {
+            console.error('PDF parse error:', parseError.message);
+            return res.status(400).json({ success: false, message: 'We could not read this PDF. Please export it again as a standard PDF and retry.' });
+        }
 
         const resumeText = pdfData.text.slice(0, 20000);
 
