@@ -12,7 +12,6 @@ import userRouter from './routes/userRoutes.js';
 import { monitorEventLoopDelay, createHistogram } from 'perf_hooks';
 import { poolStats } from './config/db.js';
 import { cacheStats } from './config/cache.js';
-import { metricsMiddleware, metricsHandler } from './config/metrics.js';
 
 const app = express();
 
@@ -36,8 +35,9 @@ await cloudinaryConfig();
 
 app.use(cors());
 
-// Prometheus metrics (only when METRICS=true; used by the local Docker lab)
+// Prometheus metrics (lab only): the library is not even loaded unless METRICS=true
 if (process.env.METRICS === 'true') {
+    const { metricsMiddleware, metricsHandler } = await import('./config/metrics.js');
     app.use(metricsMiddleware);
     app.get('/metrics', metricsHandler);
 }
@@ -76,19 +76,21 @@ app.get('/', (req, res) => res.send('Server Live'));
 app.use('/api', apiLimiter);
 
 
-// TEMPORARY: measures one database round trip and the Vercel region (remove after the test)
-app.get('/api/health/db', async (req, res) => {
-    try {
-        let t = Date.now();
-        await sql`SELECT 1`;
-        const firstMs = Date.now() - t;
-        t = Date.now();
-        await sql`SELECT 1`;
-        res.json({ ok: true, region: process.env.VERCEL_REGION || 'unknown', firstMs, dbMs: Date.now() - t });
-    } catch (e) {
-        res.status(500).json({ ok: false });
-    }
-}); 
+// Optional diagnostic: one database round trip plus the Vercel region. Off unless ENABLE_DB_HEALTH=true.
+if (process.env.ENABLE_DB_HEALTH === 'true') {
+    app.get('/api/health/db', async (req, res) => {
+        try {
+            let t = Date.now();
+            await sql`SELECT 1`;
+            const firstMs = Date.now() - t;
+            t = Date.now();
+            await sql`SELECT 1`;
+            res.json({ ok: true, region: process.env.VERCEL_REGION || 'unknown', firstMs, dbMs: Date.now() - t });
+        } catch (e) {
+            res.status(500).json({ ok: false });
+        }
+    });
+}
 app.use('/api/ai', aiRouter);
 if (process.env.QUEUE_ENABLED === 'true' && process.env.REDIS_URL) {
     const { default: queueRouter } = await import('./routes/queueRoutes.js');
@@ -134,8 +136,11 @@ function shutdown(signal) {
         process.exit(1);
     }, 8000).unref();
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// Vercel manages the process lifecycle itself, so these handlers are for Docker and local runs only
+if (!process.env.VERCEL) {
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
 // TEST MODE: every 10s print event-loop delay, memory and server-side time per endpoint
 if (process.env.LOAD_TEST === 'true') {
