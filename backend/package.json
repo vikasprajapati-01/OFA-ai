@@ -24,7 +24,7 @@
     "express-rate-limit": "^8.7.1",
     "ioredis": "^6.0.0",
     "multer": "^2.2.0",
-    "openai": "^6.44.0",
+    "openai": "^7.62.0",
     "pdf-parse": "^1.1.1",
     "pg": "^8.23.1",
     "prom-client": "^15.1.3"
