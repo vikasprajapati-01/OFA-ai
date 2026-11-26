@@ -35,6 +35,13 @@ await cloudinaryConfig();
 
 app.use(cors());
 
+// Prometheus metrics (lab only): the library is not even loaded unless METRICS=true
+if (process.env.METRICS === 'true') {
+    const { metricsMiddleware, metricsHandler } = await import('./config/metrics.js');
+    app.use(metricsMiddleware);
+    app.get('/metrics', metricsHandler);
+}
+
 // TEST MODE: measure how long the server itself takes per endpoint
 const stats = new Map();
 if (process.env.LOAD_TEST === 'true') {
@@ -69,20 +76,26 @@ app.get('/', (req, res) => res.send('Server Live'));
 app.use('/api', apiLimiter);
 
 
-// TEMPORARY: measures one database round trip and the Vercel region (remove after the test)
-app.get('/api/health/db', async (req, res) => {
-    try {
-        let t = Date.now();
-        await sql`SELECT 1`;
-        const firstMs = Date.now() - t;
-        t = Date.now();
-        await sql`SELECT 1`;
-        res.json({ ok: true, region: process.env.VERCEL_REGION || 'unknown', firstMs, dbMs: Date.now() - t });
-    } catch (e) {
-        res.status(500).json({ ok: false });
-    }
-}); 
+// Optional diagnostic: one database round trip plus the Vercel region. Off unless ENABLE_DB_HEALTH=true.
+if (process.env.ENABLE_DB_HEALTH === 'true') {
+    app.get('/api/health/db', async (req, res) => {
+        try {
+            let t = Date.now();
+            await sql`SELECT 1`;
+            const firstMs = Date.now() - t;
+            t = Date.now();
+            await sql`SELECT 1`;
+            res.json({ ok: true, region: process.env.VERCEL_REGION || 'unknown', firstMs, dbMs: Date.now() - t });
+        } catch (e) {
+            res.status(500).json({ ok: false });
+        }
+    });
+}
 app.use('/api/ai', aiRouter);
+if (process.env.QUEUE_ENABLED === 'true' && process.env.REDIS_URL) {
+    const { default: queueRouter } = await import('./routes/queueRoutes.js');
+    app.use('/api/queue', queueRouter);
+}
 app.use('/api/user', userRouter);
 
 // Central error handler (multer errors, bad JSON, anything uncaught)
@@ -102,6 +115,32 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // Keep idle connections open longer than clients/proxies expect (avoids random connection resets)
 server.keepAliveTimeout = 65 * 1000;
 server.headersTimeout = 66 * 1000;
+
+// Graceful shutdown: on SIGTERM/SIGINT stop taking new requests, let running ones finish, then exit.
+// Without this, Node running as PID 1 in Docker ignores SIGTERM and gets force-killed after 10 s.
+let shuttingDown = false;
+function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received: finishing in-flight requests, then exiting`);
+    server.close(() => {
+        console.log('All requests finished, exiting');
+        process.exit(0);
+    });
+    // Nginx keeps idle connections open; close them so server.close() can complete
+    server.closeIdleConnections();
+    setInterval(() => server.closeIdleConnections(), 500).unref();
+    // Safety net: Docker force-kills after 10 s by default
+    setTimeout(() => {
+        console.log('Shutdown timed out, forcing exit');
+        process.exit(1);
+    }, 8000).unref();
+}
+// Vercel manages the process lifecycle itself, so these handlers are for Docker and local runs only
+if (!process.env.VERCEL) {
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
 // TEST MODE: every 10s print event-loop delay, memory and server-side time per endpoint
 if (process.env.LOAD_TEST === 'true') {
